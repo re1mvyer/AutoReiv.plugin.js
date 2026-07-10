@@ -2,9 +2,9 @@
  * @name AutoReiv
  * @author re1mayer
  * @authorId 355307086667841537
- * @description Ваш приветствует АвтоРейв и он поможет выполнить любое задание Discord. Check link!
+ * @description AutoReiv welcomes you and helps complete any Discord quest. Check link!
  * @website https://steamcommunity.com/id/re1mvyer/
- * @source https://gist.github.com/re1mvyer/1f2a1eaf35aa4675fa5c5f44497ac4f7
+ * @source https://github.com/re1mvyer/AutoReiv.plugin.js
  * @donate https://www.donationalerts.com/r/re1mayer
  * @invite https://discord.gg/8aNprKRmsC
  */
@@ -19,7 +19,7 @@ module.exports = class AutoReiv {
     }
 
     getName() { return "AutoReiv"; }
-    getDescription() { return "Ваш приветствует АвтоРейв и он поможет выполнить любое задание Discord. Check link!"; }
+    getDescription() { return "AutoReiv welcomes you and helps complete any Discord quest. Check link!"; }
     getVersion() { return "1.0.0"; }
     getAuthor() { return "re1mayer"; }
 
@@ -41,7 +41,7 @@ module.exports = class AutoReiv {
         this.restoreModules();
     }
 
-    // ========== СТИЛИ ==========
+    // ========== STYLES ==========
     injectStyles() {
         const css = `
             #qa-floating-btn {
@@ -188,7 +188,7 @@ module.exports = class AutoReiv {
         if (this.styleTag) this.styleTag.remove();
     }
 
-    // ========== МОДУЛИ ==========
+    // ========== MODULES ==========
     initModules() {
         const wp = BdApi.Webpack;
         const byProps = (...props) => wp.getModule(m => props.every(p => typeof m[p] !== 'undefined'), { searchExports: true });
@@ -228,7 +228,7 @@ module.exports = class AutoReiv {
         }
     }
 
-    // ========== КНОПКА ==========
+    // ========== BUTTON ==========
     createButton() {
         const btn = document.createElement('div');
         btn.id = 'qa-floating-btn';
@@ -239,7 +239,7 @@ module.exports = class AutoReiv {
         this.button = btn;
     }
 
-    // ========== МОДАЛ ==========
+    // ========== MODAL ==========
     toggleModal() {
         if (this.modal) this.closeModal();
         else this.openModal();
@@ -288,11 +288,11 @@ module.exports = class AutoReiv {
         const row = document.createElement('div');
         row.style.cssText = 'display:flex;flex-wrap:wrap;margin-bottom:16px;';
         const btns = [
-            ['🎯 Принять все', 'enrollAll', '#5865f2'],
-            ['▶️ Выполнить все', 'completeAll', '#5865f2'],
-            ['🎁 Забрать все', 'claimAll', '#43b581'],
-            ['🔍 Проверить', 'checkQuests', '#faa61a'],
-            ['⏹️ Стоп', 'stopAll', '#f04747']
+            ['🎯 Accept All', 'enrollAll', '#5865f2'],
+            ['▶️ Complete All', 'completeAll', '#5865f2'],
+            ['🎁 Claim All', 'claimAll', '#43b581'],
+            ['🔍 Check', 'checkQuests', '#faa61a'],
+            ['⏹️ Stop', 'stopAll', '#f04747']
         ];
         btns.forEach(([text, action, color]) => {
             const btn = this._makeButton(text, color, action);
@@ -314,7 +314,7 @@ module.exports = class AutoReiv {
         const quests = this.getAvailableQuests();
         container.innerHTML = '';
         if (quests.length === 0) {
-            container.innerHTML = '<div style="color:#999;">Нет активных квестов</div>';
+            container.innerHTML = '<div style="color:#999;">No active quests</div>';
         }
         quests.forEach(quest => {
             const card = document.createElement('div');
@@ -341,9 +341,9 @@ module.exports = class AutoReiv {
             const canComplete = quest.userStatus?.enrolledAt && !quest.userStatus?.completedAt;
             const canClaim = quest.userStatus?.completedAt && !quest.userStatus?.claimedAt;
 
-            row.appendChild(this._makeButton('Принять', canEnroll ? '#5865f2' : '#4f545c', 'enrollQuest', quest.id, !canEnroll));
-            row.appendChild(this._makeButton('Выполнить', canComplete ? '#5865f2' : '#4f545c', 'completeQuest', quest.id, !canComplete));
-            row.appendChild(this._makeButton('Забрать', canClaim ? '#43b581' : '#4f545c', 'claimQuest', quest.id, !canClaim));
+            row.appendChild(this._makeButton('Accept', canEnroll ? '#5865f2' : '#4f545c', 'enrollQuest', quest.id, !canEnroll));
+            row.appendChild(this._makeButton('Complete', canComplete ? '#5865f2' : '#4f545c', 'completeQuest', quest.id, !canComplete));
+            row.appendChild(this._makeButton('Claim', canClaim ? '#43b581' : '#4f545c', 'claimQuest', quest.id, !canClaim));
             card.appendChild(row);
             container.appendChild(card);
         });
@@ -410,7 +410,7 @@ module.exports = class AutoReiv {
         }, duration);
     }
 
-    // ========== МЕТОДЫ ==========
+    // ========== METHODS ==========
     getAvailableQuests() {
         if (!this.QuestsStore?.quests) return [];
         return [...this.QuestsStore.quests.values()].filter(q => {
@@ -424,7 +424,7 @@ module.exports = class AutoReiv {
     async enrollAll() {
         const quests = this.getAvailableQuests().filter(q => !q.userStatus?.enrolledAt && !q.userStatus?.completedAt);
         for (const q of quests) await this.enrollQuest(q.id);
-        this.showNotification(`✅ Принято заданий: ${quests.length}`, 3000);
+        this.showNotification(`✅ Quests accepted: ${quests.length}`, 3000);
     }
 
     async enrollQuest(id) {
@@ -441,11 +441,11 @@ module.exports = class AutoReiv {
             if (res?.body?.traffic_metadata_sealed) {
                 this._trafficMetadataSealed = res.body.traffic_metadata_sealed;
             }
-            console.log('[QA] Задание принято:', id);
+            console.log('[QA] Quest accepted:', id);
             await new Promise(r => setTimeout(r, 2000));
         } catch(e) {
-            console.error('[QA] Ошибка при принятии:', e);
-            this.showNotification('❌ Ошибка при принятии задания', 3000);
+            console.error('[QA] Error accepting quest:', e);
+            this.showNotification('❌ Error accepting quest', 3000);
         }
         this.updateQuestList();
     }
@@ -453,14 +453,14 @@ module.exports = class AutoReiv {
     async completeAll() {
         const quests = this.getAvailableQuests().filter(q => q.userStatus?.enrolledAt && !q.userStatus?.completedAt);
         if (quests.length === 0) {
-            this.showNotification('⚠️ Нет активных квестов для выполнения', 3000);
+            this.showNotification('⚠️ No active quests to complete', 3000);
             return;
         }
         for (const q of quests) {
             this.activeTasks.set(q.id, { abort: false });
             this.completeQuest(q);
         }
-        this.showNotification(`🚀 Запущено выполнение ${quests.length} квестов`, 3000);
+        this.showNotification(`🚀 Started completing ${quests.length} quests`, 3000);
     }
 
     async completeQuest(quest) {
@@ -471,7 +471,7 @@ module.exports = class AutoReiv {
         const target = taskConfig.tasks[taskType].target;
 
         if (!this.isApp && (taskType === "PLAY_ON_DESKTOP" || taskType === "STREAM_ON_DESKTOP")) {
-            console.warn('[QA] Требуется десктопное приложение. Пропускаем:', quest.config.messages.questName);
+            console.warn('[QA] Desktop app required. Skipping:', quest.config.messages.questName);
             this.activeTasks.delete(quest.id);
             return;
         }
@@ -486,10 +486,10 @@ module.exports = class AutoReiv {
             } else if (taskType === "PLAY_ACTIVITY") {
                 await this.runActivityTask(quest, target, task);
             }
-            console.log('[QA] Задание выполнено:', quest.id);
+            console.log('[QA] Quest completed:', quest.id);
         } catch(e) {
-            console.error('[QA] Ошибка выполнения:', e);
-            this.showNotification('❌ Ошибка при выполнении квеста', 3000);
+            console.error('[QA] Error completing quest:', e);
+            this.showNotification('❌ Error completing quest', 3000);
         } finally {
             this.activeTasks.delete(quest.id);
             this.updateQuestList();
@@ -587,24 +587,24 @@ module.exports = class AutoReiv {
     async claimAll() {
         const quests = this.getAvailableQuests().filter(q => q.userStatus?.completedAt && !q.userStatus?.claimedAt);
         if (quests.length === 0) {
-            this.showNotification('⚠️ Нет завершённых квестов для получения наград', 3000);
+            this.showNotification('⚠️ No completed quests to claim rewards', 3000);
             return;
         }
         await this.ensureModalClosed();
-        this.showNotification(`🎁 Начинаю получение ${quests.length} наград...`, 2000);
+        this.showNotification(`🎁 Claiming ${quests.length} rewards...`, 2000);
         for (const q of quests) {
             await this.claimQuest(q.id);
             await new Promise(r => setTimeout(r, 3500));
         }
         this.updateQuestList();
-        this.showNotification('✅ Награды обработаны', 3000);
+        this.showNotification('✅ Rewards processed', 3000);
     }
 
     async claimQuestWrapper(questId) {
         await this.ensureModalClosed();
         await this.claimQuest(questId);
         this.updateQuestList();
-        this.showNotification('✅ Награда обработана', 3000);
+        this.showNotification('✅ Reward processed', 3000);
     }
 
     async ensureModalClosed() {
@@ -614,22 +614,22 @@ module.exports = class AutoReiv {
     }
 
     async claimQuest(id) {
-        const claimTexts = ['получить награду', 'claim reward', 'забрать награду', 'get reward'];
+        const claimTexts = ['claim reward', 'get reward'];
         for (let attempt = 0; attempt < 30; attempt++) {
             const btn = this.findClaimButtonGlobal(claimTexts);
             if (btn) {
-                console.log('[QA] Клик по кнопке получения награды для', id);
+                console.log('[QA] Clicking claim button for', id);
                 btn.click();
                 while (document.querySelector('iframe[src*="hcaptcha"], div[class*="captcha"]')) {
-                    console.warn('[QA] Капча! Ожидайте решения...');
+                    console.warn('[QA] Captcha detected! Waiting for solution...');
                     await new Promise(r => setTimeout(r, 3000));
                 }
                 return;
             }
             await new Promise(r => setTimeout(r, 500));
         }
-        console.error('[QA] Кнопка получения награды не найдена для', id);
-        this.showNotification('❌ Кнопка получения награды не найдена', 3000);
+        console.error('[QA] Claim button not found for', id);
+        this.showNotification('❌ Claim button not found', 3000);
     }
 
     findClaimButtonGlobal(texts) {
@@ -669,22 +669,22 @@ module.exports = class AutoReiv {
         const completed = quests.filter(q => q.userStatus?.completedAt).length;
         const claimed = quests.filter(q => q.userStatus?.claimedAt).length;
         this.showNotification(
-            `📊 Квестов: ${quests.length} | Принято: ${enrolled} | Завершено: ${completed} | Наград: ${claimed}`,
+            `📊 Quests: ${quests.length} | Accepted: ${enrolled} | Completed: ${completed} | Claimed: ${claimed}`,
             6000
         );
-        console.log('[QA] Квестов:', quests.length, quests.map(q => q.config.messages.questName));
+        console.log('[QA] Quests:', quests.length, quests.map(q => q.config.messages.questName));
     }
 
     stopAll() {
-        console.log('[QA] stopAll вызван, активных задач:', this.activeTasks.size);
+        console.log('[QA] stopAll called, active tasks:', this.activeTasks.size);
         if (this.activeTasks.size === 0) {
-            this.showNotification('⚠️ Нет активных задач для остановки', 3000);
+            this.showNotification('⚠️ No active tasks to stop', 3000);
             return;
         }
         for (let [id, task] of this.activeTasks) task.abort = true;
         this.activeTasks.clear();
         this.restoreModules();
-        this.showNotification('🛑 Все задачи остановлены', 3000);
+        this.showNotification('🛑 All tasks stopped', 3000);
         this.updateQuestList();
     }
 };
