@@ -2,7 +2,8 @@
  * @name AutoReiv
  * @author re1mayer
  * @authorId 355307086667841537
- * @description AutoReiv welcomes you and helps complete any Discord quest. Check link!
+ * @description Automates Discord quest completion. Use at your own risk.
+ * @version 1.0.1
  * @website https://steamcommunity.com/id/re1mvyer/
  * @source https://github.com/re1mvyer/AutoReiv.plugin.js
  * @donate https://www.donationalerts.com/r/re1mayer
@@ -11,29 +12,29 @@
 
 module.exports = class AutoReiv {
     constructor() {
-        this.button = null;
-        this.modal = null;
-        this.activeTasks = new Map();
+        this.floatingActionButton = null;
+        this.activeModalBackdrop = null;
+        this.questTaskControllers = new Map();
         this.hotkeyHandler = null;
-        this._trafficMetadataSealed = null;
+        this._trafficMetadataSealed = null;   // будет заполнен только из ответа сервера
     }
 
-    getName() { return "AutoReiv"; }
-    getDescription() { return "AutoReiv welcomes you and helps complete any Discord quest. Check link!"; }
-    getVersion() { return "1.0.0"; }
-    getAuthor() { return "re1mayer"; }
+    getName()        { return "AutoReiv"; }
+    getDescription() { return "Automates Discord quest completion. Use at your own risk."; }
+    getVersion()     { return "1.0.1"; }
+    getAuthor()      { return "re1mayer"; }
 
     start() {
         this.injectStyles();
         this.initModules();
-        this.createButton();
+        this.createFloatingButton();
         this.registerHotkey();
     }
 
     stop() {
         this.removeStyles();
-        if (this.button) this.button.remove();
-        if (this.modal) this.modal.remove();
+        if (this.floatingActionButton) this.floatingActionButton.remove();
+        if (this.activeModalBackdrop) this.activeModalBackdrop.remove();
         if (this.hotkeyHandler) {
             document.removeEventListener('keydown', this.hotkeyHandler);
             this.hotkeyHandler = null;
@@ -45,47 +46,36 @@ module.exports = class AutoReiv {
     injectStyles() {
         const css = `
             #qa-floating-btn {
-                position: fixed;
-                bottom: 20px;
-                right: 20px;
-                width: 56px;
-                height: 56px;
-                background: rgba(0, 0, 0, 0.55);
+                position: fixed; bottom: 20px; right: 20px;
+                width: 56px; height: 56px;
+                background: rgba(0,0,0,0.55);
                 backdrop-filter: blur(8px);
                 border-radius: 50%;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                display: flex; align-items: center; justify-content: center;
                 cursor: pointer;
                 box-shadow: 0 4px 12px rgba(0,0,0,0.5);
                 z-index: 10000;
-                font-size: 28px;
-                color: white;
+                font-size: 28px; color: white;
                 transition: background 0.2s, transform 0.2s;
                 user-select: none;
             }
             #qa-floating-btn:hover {
-                background: rgba(0, 0, 0, 0.8);
+                background: rgba(0,0,0,0.8);
                 transform: scale(1.08);
             }
             #qa-modal-backdrop {
-                position: fixed;
-                top: 0; left: 0; right: 0; bottom: 0;
+                position: fixed; top: 0; left: 0; right: 0; bottom: 0;
                 background: rgba(0,0,0,0.5);
                 backdrop-filter: blur(4px);
                 z-index: 10001;
-                display: flex;
-                align-items: center;
-                justify-content: center;
+                display: flex; align-items: center; justify-content: center;
             }
             #qa-modal {
-                background: rgba(0, 0, 0, 0.85);
+                background: rgba(0,0,0,0.85);
                 backdrop-filter: blur(10px);
                 border-radius: 12px;
                 padding: 24px;
-                width: 480px;
-                max-width: 95vw;
-                max-height: 85vh;
+                width: 480px; max-width: 95vw; max-height: 85vh;
                 overflow-y: auto;
                 color: #dcddde;
                 box-shadow: 0 8px 32px rgba(0,0,0,0.6);
@@ -93,30 +83,15 @@ module.exports = class AutoReiv {
                 scrollbar-width: thin;
                 scrollbar-color: rgba(255,255,255,0.2) transparent;
             }
-            #qa-modal::-webkit-scrollbar {
-                width: 6px;
-            }
-            #qa-modal::-webkit-scrollbar-track {
-                background: transparent;
-                border-radius: 3px;
-            }
-            #qa-modal::-webkit-scrollbar-thumb {
-                background: rgba(255,255,255,0.2);
-                border-radius: 3px;
-            }
-            #qa-modal::-webkit-scrollbar-thumb:hover {
-                background: rgba(255,255,255,0.35);
-            }
-
+            #qa-modal::-webkit-scrollbar { width: 6px; }
+            #qa-modal::-webkit-scrollbar-track { background: transparent; border-radius: 3px; }
+            #qa-modal::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.2); border-radius: 3px; }
+            #qa-modal::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.35); }
             .qa-btn {
-                margin: 4px;
-                padding: 8px 16px;
-                border: none;
-                border-radius: 20px;
-                color: white;
-                cursor: pointer;
-                font-size: 13px;
-                font-weight: 500;
+                margin: 4px; padding: 8px 16px;
+                border: none; border-radius: 20px;
+                color: white; cursor: pointer;
+                font-size: 13px; font-weight: 500;
                 transition: all 0.2s ease;
                 pointer-events: auto;
                 background: rgba(255,255,255,0.1);
@@ -131,52 +106,25 @@ module.exports = class AutoReiv {
                 box-shadow: 0 4px 12px rgba(0,0,0,0.3);
                 border-color: rgba(255,255,255,0.3);
             }
-            .qa-btn:active {
-                transform: scale(0.96);
-                box-shadow: 0 1px 4px rgba(0,0,0,0.2);
-            }
-            .qa-btn[disabled] {
-                opacity: 0.4;
-                cursor: not-allowed;
-                pointer-events: none;
-                transform: none;
-                box-shadow: none;
-            }
+            .qa-btn:active { transform: scale(0.96); box-shadow: 0 1px 4px rgba(0,0,0,0.2); }
+            .qa-btn[disabled] { opacity: 0.4; cursor: not-allowed; pointer-events: none; transform: none; box-shadow: none; }
             .qa-custom-notification {
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                background: rgba(0,0,0,0.85);
-                backdrop-filter: blur(8px);
-                color: #fff;
-                padding: 14px 24px;
+                position: fixed; top: 20px; right: 20px;
+                background: rgba(0,0,0,0.85); backdrop-filter: blur(8px);
+                color: #fff; padding: 14px 24px;
                 border-radius: 10px;
                 box-shadow: 0 8px 24px rgba(0,0,0,0.6);
                 z-index: 10002;
-                font-size: 14px;
-                font-weight: 500;
-                display: flex;
-                align-items: center;
-                gap: 10px;
-                opacity: 0;
-                transform: translateX(20px);
+                font-size: 14px; font-weight: 500;
+                display: flex; align-items: center; gap: 10px;
+                opacity: 0; transform: translateX(20px);
                 transition: opacity 0.3s, transform 0.3s;
-                pointer-events: none;
-                max-width: 400px;
+                pointer-events: none; max-width: 400px;
             }
-            .qa-custom-notification.show {
-                opacity: 1;
-                transform: translateX(0);
-                pointer-events: auto;
-            }
+            .qa-custom-notification.show { opacity: 1; transform: translateX(0); pointer-events: auto; }
             .qa-custom-notification .close-btn {
-                margin-left: auto;
-                background: none;
-                border: none;
-                color: #b9bbbe;
-                cursor: pointer;
-                font-size: 18px;
-                line-height: 1;
+                margin-left: auto; background: none; border: none;
+                color: #b9bbbe; cursor: pointer; font-size: 18px; line-height: 1;
             }
         `;
         this.styleTag = document.createElement('style');
@@ -209,6 +157,7 @@ module.exports = class AutoReiv {
         this.GuildChannelStore = byProps('getAllGuilds');
         this.isApp = typeof DiscordNative !== 'undefined';
 
+        // Сохраняем оригиналы для безопасного восстановления
         if (this.RunningGameStore) {
             this.origGetRunning = this.RunningGameStore.getRunningGames.bind(this.RunningGameStore);
             this.origGetGameForPID = this.RunningGameStore.getGameForPID.bind(this.RunningGameStore);
@@ -228,20 +177,20 @@ module.exports = class AutoReiv {
         }
     }
 
-    // ========== BUTTON ==========
-    createButton() {
+    // ========== FLOATING BUTTON ==========
+    createFloatingButton() {
         const btn = document.createElement('div');
         btn.id = 'qa-floating-btn';
         btn.innerHTML = '🤖';
         btn.title = 'AutoReiv (Ctrl+Shift+Q)';
         btn.addEventListener('click', () => this.toggleModal());
         document.body.appendChild(btn);
-        this.button = btn;
+        this.floatingActionButton = btn;
     }
 
     // ========== MODAL ==========
     toggleModal() {
-        if (this.modal) this.closeModal();
+        if (this.activeModalBackdrop) this.closeModal();
         else this.openModal();
     }
 
@@ -273,14 +222,14 @@ module.exports = class AutoReiv {
 
         backdrop.appendChild(modal);
         document.body.appendChild(backdrop);
-        this.modal = backdrop;
+        this.activeModalBackdrop = backdrop;
         this.updateQuestList();
     }
 
     closeModal() {
-        if (this.modal) {
-            this.modal.remove();
-            this.modal = null;
+        if (this.activeModalBackdrop) {
+            this.activeModalBackdrop.remove();
+            this.activeModalBackdrop = null;
         }
     }
 
@@ -321,9 +270,9 @@ module.exports = class AutoReiv {
             card.style.cssText = 'background: rgba(255,255,255,0.05); border-radius:8px; padding:14px; margin-bottom:10px; backdrop-filter: blur(4px);';
             const name = quest.config.messages.questName;
             const cfg = quest.config.taskConfig ?? quest.config.taskConfigV2;
-            const type = Object.keys(cfg.tasks)[0];
-            const target = cfg.tasks[type].target;
-            const current = quest.userStatus?.progress?.[type]?.value ?? 0;
+            const taskType = Object.keys(cfg.tasks)[0];
+            const target = cfg.tasks[taskType].target;
+            const current = quest.userStatus?.progress?.[taskType]?.value ?? 0;
             const pct = Math.min(100, Math.floor((current / target) * 100));
 
             card.innerHTML = `
@@ -349,7 +298,7 @@ module.exports = class AutoReiv {
         });
 
         if (this._stopBtn) {
-            this._stopBtn.disabled = this.activeTasks.size === 0;
+            this._stopBtn.disabled = this.questTaskControllers.size === 0;
         }
     }
 
@@ -410,7 +359,7 @@ module.exports = class AutoReiv {
         }, duration);
     }
 
-    // ========== METHODS ==========
+    // ========== QUEST LOGIC ==========
     getAvailableQuests() {
         if (!this.QuestsStore?.quests) return [];
         return [...this.QuestsStore.quests.values()].filter(q => {
@@ -435,16 +384,16 @@ module.exports = class AutoReiv {
                     location: 11,
                     is_targeted: false,
                     metadata_sealed: null,
-                    traffic_metadata_sealed: this._trafficMetadataSealed || "eyJrZXlfZmluZ2VycHJpbnQiOiI4ZGUwNzVmMiIsInBheWxvYWQiOiJBWHdMd2dLS1VHak52MEpoUDUwK1UzQUpkWS9FSXZPT0xTck9xRnJRZUNrbTdaT2FQWFRXVms4Z2VWdjFmVEduUEdlMWtHclNxUGJvU3d3V3dkc0hBK25UWW1jYUtXdFNOUStXM3JJPSJ9"
+                    traffic_metadata_sealed: this._trafficMetadataSealed   // безопасно: null при первом вызове
                 }
             });
             if (res?.body?.traffic_metadata_sealed) {
                 this._trafficMetadataSealed = res.body.traffic_metadata_sealed;
             }
-            console.log('[QA] Quest accepted:', id);
-            await new Promise(r => setTimeout(r, 2000));
+            console.log('[AutoReiv] Quest accepted:', id);
+            await new Promise(r => setTimeout(r, 2000)); // задержка между запросами
         } catch(e) {
-            console.error('[QA] Error accepting quest:', e);
+            console.error('[AutoReiv] Error accepting quest:', e);
             this.showNotification('❌ Error accepting quest', 3000);
         }
         this.updateQuestList();
@@ -457,49 +406,49 @@ module.exports = class AutoReiv {
             return;
         }
         for (const q of quests) {
-            this.activeTasks.set(q.id, { abort: false });
+            this.questTaskControllers.set(q.id, { abort: false });
             this.completeQuest(q);
         }
         this.showNotification(`🚀 Started completing ${quests.length} quests`, 3000);
     }
 
     async completeQuest(quest) {
-        const task = this.activeTasks.get(quest.id) || { abort: false };
-        this.activeTasks.set(quest.id, task);
+        const controller = this.questTaskControllers.get(quest.id) || { abort: false };
+        this.questTaskControllers.set(quest.id, controller);
         const taskConfig = quest.config.taskConfig ?? quest.config.taskConfigV2;
         const taskType = Object.keys(taskConfig.tasks)[0];
         const target = taskConfig.tasks[taskType].target;
 
         if (!this.isApp && (taskType === "PLAY_ON_DESKTOP" || taskType === "STREAM_ON_DESKTOP")) {
-            console.warn('[QA] Desktop app required. Skipping:', quest.config.messages.questName);
-            this.activeTasks.delete(quest.id);
+            console.warn('[AutoReiv] Desktop app required, skipping:', quest.config.messages.questName);
+            this.questTaskControllers.delete(quest.id);
             return;
         }
 
         try {
             if (taskType === "WATCH_VIDEO" || taskType === "WATCH_VIDEO_ON_MOBILE") {
-                await this.runVideoTask(quest, target, task);
+                await this.runVideoTask(quest, target, controller);
             } else if (taskType === "PLAY_ON_DESKTOP") {
-                await this.runPlayTask(quest, target, task);
+                await this.runPlayTask(quest, target, controller);
             } else if (taskType === "STREAM_ON_DESKTOP") {
-                await this.runStreamTask(quest, target, task);
+                await this.runStreamTask(quest, target, controller);
             } else if (taskType === "PLAY_ACTIVITY") {
-                await this.runActivityTask(quest, target, task);
+                await this.runActivityTask(quest, target, controller);
             }
-            console.log('[QA] Quest completed:', quest.id);
+            console.log('[AutoReiv] Quest completed:', quest.id);
         } catch(e) {
-            console.error('[QA] Error completing quest:', e);
+            console.error('[AutoReiv] Error completing quest:', e);
             this.showNotification('❌ Error completing quest', 3000);
         } finally {
-            this.activeTasks.delete(quest.id);
+            this.questTaskControllers.delete(quest.id);
             this.updateQuestList();
         }
     }
 
-    async runVideoTask(quest, target, task) {
+    async runVideoTask(quest, target, controller) {
         let timestamp = quest.userStatus?.progress?.['WATCH_VIDEO']?.value ?? 0;
         while (timestamp < target) {
-            if (task.abort) return;
+            if (controller.abort) return;
             const step = Math.min(7, target - timestamp);
             timestamp += step;
             await this.api.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: Math.min(target, timestamp) } });
@@ -508,7 +457,7 @@ module.exports = class AutoReiv {
         await this.api.post({ url: `/quests/${quest.id}/video-progress`, body: { timestamp: target } });
     }
 
-    async runPlayTask(quest, target, task) {
+    async runPlayTask(quest, target, controller) {
         const appData = (await this.api.get({ url: `/applications/public?application_ids=${quest.config.application.id}` })).body[0];
         const fakeGame = {
             cmdLine: `C:\\Games\\${appData.name}\\game.exe`,
@@ -543,7 +492,7 @@ module.exports = class AutoReiv {
         });
     }
 
-    async runStreamTask(quest, target, task) {
+    async runStreamTask(quest, target, controller) {
         const streamObj = { id: quest.config.application.id, pid: Date.now(), sourceName: null };
         this.fakeStreams = this.fakeStreams || [];
         this.fakeStreams.push(streamObj);
@@ -565,7 +514,7 @@ module.exports = class AutoReiv {
         });
     }
 
-    async runActivityTask(quest, target, task) {
+    async runActivityTask(quest, target, controller) {
         const privateChannelId = this.ChannelStore.getSortedPrivateChannels()[0]?.id;
         const guildVoiceChannelId = Object.values(this.GuildChannelStore.getAllGuilds()).find(x => x?.VOCAL?.length)?.VOCAL[0]?.channel?.id;
         const channelId = privateChannelId || guildVoiceChannelId;
@@ -573,14 +522,14 @@ module.exports = class AutoReiv {
         const streamKey = `call:${channelId}:1`;
 
         while (true) {
-            if (task.abort) return;
+            if (controller.abort) return;
             const res = await this.api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: false } });
             const progress = res.body.progress[Object.keys(res.body.progress)[0]].value;
             if (progress >= target) {
                 await this.api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: true } });
                 break;
             }
-            await new Promise(r => setTimeout(r, 20000));
+            await new Promise(r => setTimeout(r, 20000)); // стандартный интервал между heartbeats
         }
     }
 
@@ -615,24 +564,26 @@ module.exports = class AutoReiv {
 
     async claimQuest(id) {
         const claimTexts = ['claim reward', 'get reward'];
-        for (let attempt = 0; attempt < 30; attempt++) {
-            const btn = this.findClaimButtonGlobal(claimTexts);
+        const maxAttempts = 30;
+        for (let attempt = 0; attempt < maxAttempts; attempt++) {
+            const btn = this.findClaimButton(claimTexts);
             if (btn) {
-                console.log('[QA] Clicking claim button for', id);
+                console.log('[AutoReiv] Clicking claim button for', id);
                 btn.click();
+                // Ожидаем возможную капчу
                 while (document.querySelector('iframe[src*="hcaptcha"], div[class*="captcha"]')) {
-                    console.warn('[QA] Captcha detected! Waiting for solution...');
+                    console.warn('[AutoReiv] Captcha detected – waiting for manual solving...');
                     await new Promise(r => setTimeout(r, 3000));
                 }
                 return;
             }
             await new Promise(r => setTimeout(r, 500));
         }
-        console.error('[QA] Claim button not found for', id);
+        console.error('[AutoReiv] Claim button not found after waiting for', id);
         this.showNotification('❌ Claim button not found', 3000);
     }
 
-    findClaimButtonGlobal(texts) {
+    findClaimButton(texts) {
         const buttons = document.querySelectorAll('button');
         for (const btn of buttons) {
             const txt = btn.innerText.trim().toLowerCase();
@@ -672,17 +623,17 @@ module.exports = class AutoReiv {
             `📊 Quests: ${quests.length} | Accepted: ${enrolled} | Completed: ${completed} | Claimed: ${claimed}`,
             6000
         );
-        console.log('[QA] Quests:', quests.length, quests.map(q => q.config.messages.questName));
+        console.log('[AutoReiv] Quests:', quests.length, quests.map(q => q.config.messages.questName));
     }
 
     stopAll() {
-        console.log('[QA] stopAll called, active tasks:', this.activeTasks.size);
-        if (this.activeTasks.size === 0) {
+        console.log('[AutoReiv] Stopping all active tasks:', this.questTaskControllers.size);
+        if (this.questTaskControllers.size === 0) {
             this.showNotification('⚠️ No active tasks to stop', 3000);
             return;
         }
-        for (let [id, task] of this.activeTasks) task.abort = true;
-        this.activeTasks.clear();
+        for (let controller of this.questTaskControllers.values()) controller.abort = true;
+        this.questTaskControllers.clear();
         this.restoreModules();
         this.showNotification('🛑 All tasks stopped', 3000);
         this.updateQuestList();
