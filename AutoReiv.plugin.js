@@ -3,7 +3,7 @@
  * @author re1mayer
  * @authorId 355307086667841537
  * @description Automates Discord quest completion. Use at your own risk.
- * @version 1.0.1
+ * @version 1.0.3
  * @website https://steamcommunity.com/id/re1mvyer/
  * @source https://github.com/re1mvyer/AutoReiv.plugin.js
  * @donate https://www.donationalerts.com/r/re1mayer
@@ -16,12 +16,19 @@ module.exports = class AutoReiv {
         this.activeModalBackdrop = null;
         this.questTaskControllers = new Map();
         this.hotkeyHandler = null;
-        this._trafficMetadataSealed = null;   // будет заполнен только из ответа сервера
+        this._trafficMetadataSealed = null;
+
+        // Общие массивы для моков игр и стримов
+        this.fakeGames = [];
+        this.fakeStreams = [];
+        // Счётчики активных квестов, использующих подмену
+        this.activeGameMocks = 0;
+        this.activeStreamMocks = 0;
     }
 
     getName()        { return "AutoReiv"; }
     getDescription() { return "Automates Discord quest completion. Use at your own risk."; }
-    getVersion()     { return "1.0.1"; }
+    getVersion()     { return "1.0.3"; }
     getAuthor()      { return "re1mayer"; }
 
     start() {
@@ -157,7 +164,7 @@ module.exports = class AutoReiv {
         this.GuildChannelStore = byProps('getAllGuilds');
         this.isApp = typeof DiscordNative !== 'undefined';
 
-        // Сохраняем оригиналы для безопасного восстановления
+        // Сохраняем оригиналы
         if (this.RunningGameStore) {
             this.origGetRunning = this.RunningGameStore.getRunningGames.bind(this.RunningGameStore);
             this.origGetGameForPID = this.RunningGameStore.getGameForPID.bind(this.RunningGameStore);
@@ -174,6 +181,43 @@ module.exports = class AutoReiv {
         }
         if (this.ApplicationStreamingStore) {
             this.ApplicationStreamingStore.getStreamerActiveStreamMetadata = this.origGetStreamMetadata;
+        }
+        this.activeGameMocks = 0;
+        this.activeStreamMocks = 0;
+        this.fakeGames = [];
+        this.fakeStreams = [];
+    }
+
+    // ========== Управление моками ==========
+    enableGameMock() {
+        if (this.activeGameMocks === 0) {
+            this.RunningGameStore.getRunningGames = () => this.fakeGames;
+            this.RunningGameStore.getGameForPID = (pid) => this.fakeGames.find(g => g.pid === pid);
+        }
+        this.activeGameMocks++;
+    }
+
+    disableGameMock() {
+        this.activeGameMocks--;
+        if (this.activeGameMocks <= 0) {
+            this.RunningGameStore.getRunningGames = this.origGetRunning;
+            this.RunningGameStore.getGameForPID = this.origGetGameForPID;
+            this.activeGameMocks = 0;
+        }
+    }
+
+    enableStreamMock() {
+        if (this.activeStreamMocks === 0) {
+            this.ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => this.fakeStreams[0] ?? null;
+        }
+        this.activeStreamMocks++;
+    }
+
+    disableStreamMock() {
+        this.activeStreamMocks--;
+        if (this.activeStreamMocks <= 0) {
+            this.ApplicationStreamingStore.getStreamerActiveStreamMetadata = this.origGetStreamMetadata;
+            this.activeStreamMocks = 0;
         }
     }
 
@@ -384,14 +428,14 @@ module.exports = class AutoReiv {
                     location: 11,
                     is_targeted: false,
                     metadata_sealed: null,
-                    traffic_metadata_sealed: this._trafficMetadataSealed   // безопасно: null при первом вызове
+                    traffic_metadata_sealed: this._trafficMetadataSealed
                 }
             });
             if (res?.body?.traffic_metadata_sealed) {
                 this._trafficMetadataSealed = res.body.traffic_metadata_sealed;
             }
             console.log('[AutoReiv] Quest accepted:', id);
-            await new Promise(r => setTimeout(r, 2000)); // задержка между запросами
+            await new Promise(r => setTimeout(r, 2000));
         } catch(e) {
             console.error('[AutoReiv] Error accepting quest:', e);
             this.showNotification('❌ Error accepting quest', 3000);
@@ -458,81 +502,107 @@ module.exports = class AutoReiv {
     }
 
     async runPlayTask(quest, target, controller) {
-        const appData = (await this.api.get({ url: `/applications/public?application_ids=${quest.config.application.id}` })).body[0];
-        const fakeGame = {
-            cmdLine: `C:\\Games\\${appData.name}\\game.exe`,
-            exeName: `${appData.name}.exe`,
-            exePath: `c:/games/${appData.name.toLowerCase()}/game.exe`,
-            hidden: false, isLauncher: false,
-            id: appData.id, name: appData.name,
-            pid: Math.floor(Math.random() * 30000) + 1000,
-            pidPath: [Math.floor(Math.random() * 30000) + 1000],
-            processName: appData.name, start: Date.now()
-        };
-        this.fakeGames = this.fakeGames || [];
-        this.fakeGames.push(fakeGame);
-        this.RunningGameStore.getRunningGames = () => this.fakeGames;
-        this.RunningGameStore.getGameForPID = pid => this.fakeGames.find(g => g.pid === pid);
-        this.Dispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: this.fakeGames });
+        const applicationId = quest.config.application?.id;
+        if (!applicationId) {
+            console.log(`[AutoReiv] PLAY_ON_DESKTOP without applicationId → switching to ACTIVITY`);
+            return this.runActivityTask(quest, target, controller);
+        }
 
-        await new Promise(resolve => {
-            const handler = data => {
-                if (data.questId !== quest.id) return;
-                const progress = quest.config.configVersion === 1
-                    ? data.userStatus.streamProgressSeconds
-                    : Math.floor(data.userStatus.progress[Object.keys(data.userStatus.progress)[0]].value);
-                if (progress >= target) {
-                    this.Dispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
-                    this.fakeGames = this.fakeGames.filter(g => g !== fakeGame);
-                    this.Dispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: this.fakeGames });
-                    resolve();
-                }
+        this.enableGameMock();
+        try {
+            const appData = (await this.api.get({ url: `/applications/public?application_ids=${applicationId}` })).body[0];
+            const fakeGame = {
+                cmdLine: `C:\\Games\\${appData.name}\\game.exe`,
+                exeName: `${appData.name}.exe`,
+                exePath: `c:/games/${appData.name.toLowerCase()}/game.exe`,
+                hidden: false, isLauncher: false,
+                id: appData.id, name: appData.name,
+                pid: Math.floor(Math.random() * 30000) + 1000,
+                pidPath: [Math.floor(Math.random() * 30000) + 1000],
+                processName: appData.name, start: Date.now()
             };
-            this.Dispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
-        });
+            this.fakeGames.push(fakeGame);
+            this.Dispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [], added: [fakeGame], games: this.fakeGames });
+
+            await new Promise(resolve => {
+                const handler = data => {
+                    if (data.questId !== quest.id) return;
+                    const progress = quest.config.configVersion === 1
+                        ? data.userStatus.streamProgressSeconds
+                        : Math.floor(data.userStatus.progress[Object.keys(data.userStatus.progress)[0]].value);
+                    if (progress >= target) {
+                        this.Dispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
+                        this.fakeGames = this.fakeGames.filter(g => g !== fakeGame);
+                        this.Dispatcher.dispatch({ type: "RUNNING_GAMES_CHANGE", removed: [fakeGame], added: [], games: this.fakeGames });
+                        resolve();
+                    }
+                };
+                this.Dispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
+            });
+        } finally {
+            this.disableGameMock();
+        }
     }
 
     async runStreamTask(quest, target, controller) {
-        const streamObj = { id: quest.config.application.id, pid: Date.now(), sourceName: null };
-        this.fakeStreams = this.fakeStreams || [];
-        this.fakeStreams.push(streamObj);
-        this.ApplicationStreamingStore.getStreamerActiveStreamMetadata = () => streamObj;
+        const applicationId = quest.config.application?.id;
+        if (!applicationId) {
+            console.log(`[AutoReiv] STREAM_ON_DESKTOP without applicationId → switching to ACTIVITY`);
+            return this.runActivityTask(quest, target, controller);
+        }
 
-        await new Promise(resolve => {
-            const handler = data => {
-                if (data.questId !== quest.id) return;
-                const progress = quest.config.configVersion === 1
-                    ? data.userStatus.streamProgressSeconds
-                    : Math.floor(data.userStatus.progress[Object.keys(data.userStatus.progress)[0]].value);
-                if (progress >= target) {
-                    this.Dispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
-                    this.fakeStreams = this.fakeStreams.filter(s => s !== streamObj);
-                    resolve();
-                }
-            };
-            this.Dispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
-        });
+        this.enableStreamMock();
+        try {
+            const streamObj = { id: applicationId, pid: Date.now(), sourceName: null };
+            this.fakeStreams.push(streamObj);
+
+            await new Promise(resolve => {
+                const handler = data => {
+                    if (data.questId !== quest.id) return;
+                    const progress = quest.config.configVersion === 1
+                        ? data.userStatus.streamProgressSeconds
+                        : Math.floor(data.userStatus.progress[Object.keys(data.userStatus.progress)[0]].value);
+                    if (progress >= target) {
+                        this.Dispatcher.unsubscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
+                        this.fakeStreams = this.fakeStreams.filter(s => s !== streamObj);
+                        resolve();
+                    }
+                };
+                this.Dispatcher.subscribe("QUESTS_SEND_HEARTBEAT_SUCCESS", handler);
+            });
+        } finally {
+            this.disableStreamMock();
+        }
     }
 
     async runActivityTask(quest, target, controller) {
         const privateChannelId = this.ChannelStore.getSortedPrivateChannels()[0]?.id;
         const guildVoiceChannelId = Object.values(this.GuildChannelStore.getAllGuilds()).find(x => x?.VOCAL?.length)?.VOCAL[0]?.channel?.id;
         const channelId = privateChannelId || guildVoiceChannelId;
-        if (!channelId) return;
+        if (!channelId) {
+            this.showNotification(`⚠️ Нет голосового канала для квеста "${quest.config.messages.questName}"`, 5000);
+            console.log('[AutoReiv] No voice channel for activity quest, skipping.');
+            return;
+        }
         const streamKey = `call:${channelId}:1`;
 
         while (true) {
             if (controller.abort) return;
-            const res = await this.api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: false } });
-            const progress = res.body.progress[Object.keys(res.body.progress)[0]].value;
-            if (progress >= target) {
-                await this.api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: true } });
-                break;
+            try {
+                const res = await this.api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: false } });
+                const progress = res.body.progress[Object.keys(res.body.progress)[0]].value;
+                if (progress >= target) {
+                    await this.api.post({ url: `/quests/${quest.id}/heartbeat`, body: { stream_key: streamKey, terminal: true } });
+                    break;
+                }
+            } catch (e) {
+                console.error('[AutoReiv] Heartbeat error:', e);
             }
-            await new Promise(r => setTimeout(r, 20000)); // стандартный интервал между heartbeats
+            await new Promise(r => setTimeout(r, 20000));
         }
     }
 
+    // ========== Получение наград (исправлено) ==========
     async claimAll() {
         const quests = this.getAvailableQuests().filter(q => q.userStatus?.completedAt && !q.userStatus?.claimedAt);
         if (quests.length === 0) {
@@ -562,9 +632,33 @@ module.exports = class AutoReiv {
         await new Promise(r => setTimeout(r, 800));
     }
 
+    // Открывает раздел «Подарки» (Quests) в левой панели
+    async openQuestsTab() {
+        const selector = '[data-list-item-id="guildsnav___quests"]';
+        let el = document.querySelector(selector);
+        if (!el) {
+            // Новая структура: иногда `data-list-item-id="guildsnav___quests"` или "quests"
+            el = document.querySelector('[data-list-item-id*="quests"]');
+        }
+        if (el) {
+            el.click();
+            await new Promise(r => setTimeout(r, 1500)); // ждём загрузку раздела
+        } else {
+            console.warn('[AutoReiv] Could not find quests tab button.');
+        }
+    }
+
     async claimQuest(id) {
-        const claimTexts = ['claim reward', 'get reward'];
+        const claimTexts = [
+            'claim reward', 'get reward',
+            'получить награду', 'забрать награду',
+            'claim now', 'получить'
+        ];
         const maxAttempts = 30;
+
+        // Гарантируем, что раздел квестов открыт
+        await this.openQuestsTab();
+
         for (let attempt = 0; attempt < maxAttempts; attempt++) {
             const btn = this.findClaimButton(claimTexts);
             if (btn) {
@@ -577,6 +671,7 @@ module.exports = class AutoReiv {
                 }
                 return;
             }
+            // Возможно, квест ещё не появился во вкладке, подождём и попробуем снова
             await new Promise(r => setTimeout(r, 500));
         }
         console.error('[AutoReiv] Claim button not found after waiting for', id);
@@ -591,6 +686,9 @@ module.exports = class AutoReiv {
                 return btn;
             }
         }
+        // Также ищем по возможным aria-label
+        const byAria = document.querySelector('button[aria-label*="claim"], button[aria-label*="Claim"], button[aria-label*="награда"]');
+        if (byAria && !byAria.disabled && byAria.offsetParent !== null) return byAria;
         return null;
     }
 
